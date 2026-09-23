@@ -1,0 +1,65 @@
+name: Engine AAR Build
+
+# Prebuilt engine binaries for the standalone app (no engine sources there):
+# Bcore AAR + black-reflection JAR.
+on:
+  workflow_dispatch:
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+  ANDROID_HOME: /usr/local/lib/android/sdk
+
+jobs:
+  build-aar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Accept SDK licenses
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+      - name: Install SDK packages
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;29.0.13846066" \
+            "cmake;3.22.1"
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build engine artifacts
+        run: ./gradlew :Bcore:assembleRelease :black-reflection:assemble --stacktrace --build-cache
+
+      - name: List artifacts
+        if: always()
+        run: |
+          find . -path "*build/outputs/aar/*.aar" -ls
+          find . -path "*black-reflection/build/libs/*.jar" -ls
+
+      - name: Upload engine artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newblackbox-engine
+          path: |
+            Bcore/build/outputs/aar/Bcore-release.aar
+            black-reflection/build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 30
